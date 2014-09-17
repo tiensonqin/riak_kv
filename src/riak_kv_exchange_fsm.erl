@@ -215,7 +215,7 @@ key_exchange(timeout, State=#state{local=LocalVN,
     %% unbounded exchange, with the ability to cancel exchanges through the
     %% entropy manager if needed.
     {ok, RC} = riak:local_client(),
-    AccFun = fun(KeyDiff, Acc, _SegmentInfo) ->
+    AccFun = fun(KeyDiff, Acc) ->
                      lists:foldl(fun({DiffReason, BKeyBin}, Count) ->
                                          {B, K} = binary_to_term(BKeyBin),
                                          T = {B, K, DiffReason},
