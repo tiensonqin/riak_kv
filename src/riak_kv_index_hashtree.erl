@@ -44,6 +44,7 @@
          exchange_bucket/4,
          exchange_segment/3,
          estimate_keys/1,
+         estimate_keys/2,
          hash_index_data/1,
          hash_object/2,
          update/2,
@@ -218,6 +219,10 @@ expire(Tree) ->
 estimate_keys(Tree) ->
     gen_server:call(Tree, estimate_keys, infinity).
 
+%% @doc Estimate total number of keys in index_hashtree
+estimate_keys(Tree, IndexN) ->
+    gen_server:call(Tree, {estimate_keys, IndexN}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -328,6 +333,12 @@ handle_call(estimate_keys, _From,  State=#state{trees=Trees}) ->
                              Value + Acc
                      end,
                      0, Trees),
+    {reply, {ok, EstimateNrKeys}, State};
+
+handle_call({estimate_keys, IndexN}, _From,  State=#state{trees=Trees}) ->
+    {ok, Tree} = orddict:find(IndexN, Trees),
+     lager:info("emiklix ~p ~p ~p", [IndexN, Trees, Tree]),
+    {ok, EstimateNrKeys} = hashtree:estimate_keys(Tree),
     {reply, {ok, EstimateNrKeys}, State};
 
 handle_call(_Request, _From, State) ->
