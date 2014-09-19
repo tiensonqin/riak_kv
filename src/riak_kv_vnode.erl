@@ -50,7 +50,9 @@
          request_hashtree_pid/1,
          request_hashtree_pid/2,
          reformat_object/2,
-         stop_fold/1]).
+         stop_fold/1,
+         scan/5,
+         scan/6]).
 
 %% riak_core_vnode API
 -export([init/1,
@@ -169,7 +171,7 @@ maybe_create_hashtrees(true, State=#state{idx=Index,
                         {false, _, _} -> false
                     end,
             Opts = [use_2i || lists:member(indexes, ModCaps)]
-                   ++ [vnode_empty || Empty],
+                ++ [vnode_empty || Empty],
             case riak_kv_index_hashtree:start(Index, self(), Opts) of
                 {ok, Trees} ->
                     monitor(process, Trees),
@@ -211,6 +213,19 @@ del(Preflist, BKey, ReqId) ->
     riak_core_vnode_master:command(Preflist,
                                    ?KV_DELETE_REQ{bkey=sanitize_bkey(BKey),
                                                   req_id=ReqId},
+                                   riak_kv_vnode_master).
+
+scan(Preflist, BKey, Start, Len, ReqId) ->
+    scan(Preflist, BKey, Start, Len, ReqId, {fsm, undefined, self()}).
+
+scan(Preflist, BKey, Start, Len, ReqId, Sender) ->
+    Req = ?KV_SCAN_REQ{bkey=sanitize_bkey(BKey),
+                       start=Start,
+                       len=Len,
+                       req_id=ReqId},
+    riak_core_vnode_master:command(Preflist,
+                                   Req,
+                                   Sender,
                                    riak_kv_vnode_master).
 
 %% Issue a put for the object to the preflist, expecting a reply
@@ -287,9 +302,9 @@ readrepair(Preflist, BKey, Obj, ReqId, StartTime, Options) ->
 list_keys(Preflist, ReqId, Caller, Bucket) ->
     riak_core_vnode_master:command(Preflist,
                                    #riak_kv_listkeys_req_v2{
-                                     bucket=Bucket,
-                                     req_id=ReqId,
-                                     caller=Caller},
+                                      bucket=Bucket,
+                                      req_id=ReqId,
+                                      caller=Caller},
                                    ignore,
                                    riak_kv_vnode_master).
 
@@ -407,7 +422,7 @@ init([Index]) ->
             N when is_integer(N),
                    N > 0 ->
                 lager:debug("Initializing metadata cache with size limit: ~p bytes",
-                           [MDCacheSize]),
+                            [MDCacheSize]),
                 new_md_cache(VId);
             _ ->
                 lager:debug("No metadata cache size defined, not starting"),
@@ -489,6 +504,10 @@ handle_command(?KV_PUT_REQ{bkey=BKey,
 
 handle_command(?KV_GET_REQ{bkey=BKey,req_id=ReqId},Sender,State) ->
     do_get(Sender, BKey, ReqId, State);
+
+handle_command(?KV_SCAN_REQ{bkey=BKey,start=Start,len=Len,req_id=ReqId},Sender,State) ->
+    do_scan(Sender, BKey, Start, Len, ReqId, State);
+
 handle_command(#riak_kv_listkeys_req_v2{bucket=Input, req_id=ReqId, caller=Caller}, _Sender,
                State=#state{async_folding=AsyncFolding,
                             key_buf_size=BufferSize,
@@ -605,22 +624,22 @@ handle_command({refresh_index_data, BKey, OldIdxData}, Sender,
     case IndexCap of
         true ->
             {Exists, RObj, IdxData, ModState2} =
-            case do_get_term(BKey, Mod, ModState) of
-                {{ok, ExistingObj}, UpModState} ->
-                    {true, ExistingObj, riak_object:index_data(ExistingObj),
-                     UpModState};
-                {{error, _}, UpModState} ->
-                    {false, undefined, [], UpModState}
-            end,
+                case do_get_term(BKey, Mod, ModState) of
+                    {{ok, ExistingObj}, UpModState} ->
+                        {true, ExistingObj, riak_object:index_data(ExistingObj),
+                         UpModState};
+                    {{error, _}, UpModState} ->
+                        {false, undefined, [], UpModState}
+                end,
             IndexSpecs = riak_object:diff_index_data(OldIdxData, IdxData),
             {Reply, ModState3} =
-            case Mod:put(Bucket, Key, IndexSpecs, undefined, ModState2) of
-                {ok, UpModState2} ->
-                    riak_kv_stat:update(vnode_index_refresh),
-                    {ok, UpModState2};
-                {error, Reason, UpModState2} ->
-                    {{error, Reason}, UpModState2}
-            end,
+                case Mod:put(Bucket, Key, IndexSpecs, undefined, ModState2) of
+                    {ok, UpModState2} ->
+                        riak_kv_stat:update(vnode_index_refresh),
+                        {ok, UpModState2};
+                    {error, Reason, UpModState2} ->
+                        {{error, Reason}, UpModState2}
+                end,
             case Exists of
                 true ->
                     update_hashtree(Bucket, Key, RObj, State);
@@ -725,24 +744,24 @@ handle_command({get_index_entries, Opts},
                     BufferMod = riak_kv_fold_buffer,
                     ResultFun =
                         fun(Results) ->
-                            % Send result batch and wait for acknowledgement
-                            % before moving on (backpressure to avoid flooding caller).
-                            BatchRef = make_ref(),
-                            riak_core_vnode:reply(Sender, {self(), BatchRef, Results}),
-                            Monitor = riak_core_vnode:monitor(Sender),
-                            receive
-                                {ack_keys, BatchRef} ->
-                                    erlang:demonitor(Monitor, [flush]);
-                                {'DOWN', Monitor, process, _Pid, _Reason} ->
-                                    throw(index_reformat_client_died)
-                            end
+                                                % Send result batch and wait for acknowledgement
+                                                % before moving on (backpressure to avoid flooding caller).
+                                BatchRef = make_ref(),
+                                riak_core_vnode:reply(Sender, {self(), BatchRef, Results}),
+                                Monitor = riak_core_vnode:monitor(Sender),
+                                receive
+                                    {ack_keys, BatchRef} ->
+                                        erlang:demonitor(Monitor, [flush]);
+                                    {'DOWN', Monitor, process, _Pid, _Reason} ->
+                                        throw(index_reformat_client_died)
+                                end
                         end,
                     Buffer = BufferMod:new(BufferSize, ResultFun),
                     FoldFun = fun(B, K, Buf) -> BufferMod:add({B, K}, Buf) end,
                     FinishFun =
                         fun(FinalBuffer) ->
-                            BufferMod:flush(FinalBuffer),
-                            riak_core_vnode:reply(Sender, done)
+                                BufferMod:flush(FinalBuffer),
+                                riak_core_vnode:reply(Sender, done)
                         end,
                     FoldOpts = [{index, incorrect_format, ForUpgrade}, async_fold],
                     case list(FoldFun, FinishFun, Mod, fold_keys, ModState, FoldOpts, Buffer) of
@@ -806,8 +825,8 @@ handle_coverage(?KV_LISTKEYS_REQ{bucket=Bucket,
     handle_coverage_keyfold(Bucket, ItemFilter, ResultFun,
                             FilterVNodes, Sender, Opts, State);
 handle_coverage(#riak_kv_index_req_v1{bucket=Bucket,
-                              item_filter=ItemFilter,
-                              qry=Query},
+                                      item_filter=ItemFilter,
+                                      qry=Query},
                 FilterVNodes, Sender, State) ->
     %% v1 == no backpressure
     handle_coverage_index(Bucket, ItemFilter, Query,
@@ -821,7 +840,7 @@ handle_coverage(?KV_INDEX_REQ{bucket=Bucket,
                           FilterVNodes, Sender, State, fun result_fun_ack/2).
 
 prepare_index_query(#riak_kv_index_v3{term_regex=RE} = Q) when
-        RE =/= undefined ->
+      RE =/= undefined ->
     {ok, CompiledRE} = re:compile(RE),
     Q#riak_kv_index_v3{term_regex=CompiledRE};
 prepare_index_query(Q) ->
@@ -861,28 +880,28 @@ handle_coverage_index(Bucket, ItemFilter, Query,
                            false -> fold_keys
                        end,
             handle_coverage_fold(FoldType, Bucket, ItemFilter, ResultFun,
-                                    FilterVNodes, Sender, Opts, State);
+                                 FilterVNodes, Sender, Opts, State);
         false ->
             {reply, {error, {indexes_not_supported, Mod}}, State}
     end.
 
 %% Convenience for handling both v3 and v4 coverage-based key fold operations
 handle_coverage_keyfold(Bucket, ItemFilter, Query,
-                      FilterVNodes, Sender, State,
-                      ResultFunFun) ->
+                        FilterVNodes, Sender, State,
+                        ResultFunFun) ->
     handle_coverage_fold(fold_keys, Bucket, ItemFilter, Query,
-                            FilterVNodes, Sender, State, ResultFunFun).
+                         FilterVNodes, Sender, State, ResultFunFun).
 
 %% Until a bit of a refactor can occur to better abstract
 %% index operations, allow the ModFun for folding to be declared
 %% to support index operations that can return objects
 handle_coverage_fold(FoldType, Bucket, ItemFilter, ResultFun,
-                        FilterVNodes, Sender, Opts0,
-                        State=#state{async_folding=AsyncFolding,
-                                     idx=Index,
-                                     key_buf_size=DefaultBufSz,
-                                     mod=Mod,
-                                     modstate=ModState}) ->
+                     FilterVNodes, Sender, Opts0,
+                     State=#state{async_folding=AsyncFolding,
+                                  idx=Index,
+                                  key_buf_size=DefaultBufSz,
+                                  mod=Mod,
+                                  modstate=ModState}) ->
     %% Construct the filter function
     FilterVNode = proplists:get_value(Index, FilterVNodes),
     Filter = riak_kv_coverage_filter:build_filter(Bucket, ItemFilter, FilterVNode),
@@ -1127,7 +1146,7 @@ handle_info({final_delete, BKey, RObjHash}, State = #state{mod=Mod, modstate=Mod
                        case delete_hash(RObj) of
                            RObjHash ->
                                do_backend_delete(BKey, RObj, State#state{modstate=ModState1});
-                         _ ->
+                           _ ->
                                State#state{modstate=ModState1}
                        end;
                    {{error, _}, ModState1} ->
@@ -1334,9 +1353,9 @@ prepare_put(#state{vnodeid=VId,
                                                  riak_object:diff_index_specs(AMObj,
                                                                               OldObj)
                                          end;
-                                    false ->
+                                     false ->
                                          []
-                    end,
+                                 end,
                     ObjToStore = case PruneTime of
                                      undefined ->
                                          AMObj;
@@ -1345,7 +1364,7 @@ prepare_put(#state{vnodeid=VId,
                                                                 vclock:prune(VC,
                                                                              PruneTime,
                                                                              BProps))
-                    end,
+                                 end,
                     case handle_crdt(Coord, CRDTOp, VId, ObjToStore) of
                         {error, E} ->
                             {{fail, Idx, E}, PutArgs};
@@ -1411,7 +1430,7 @@ actual_put(BKey={Bucket, Key}, Obj, IndexSpecs, RB, ReqID,
                         mod=Mod,
                         modstate=ModState}) ->
     case encode_and_put(Obj, Mod, Bucket, Key, IndexSpecs, ModState,
-                       do_max_check) of
+                        do_max_check) of
         {{ok, UpdModState}, EncodedVal} ->
             update_hashtree(Bucket, Key, EncodedVal, State),
             maybe_cache_object(BKey, Obj, State),
@@ -1510,6 +1529,24 @@ do_get(_Sender, BKey, ReqID,
             ok
     end,
     update_vnode_stats(vnode_get, Idx, StartTS),
+    {reply, {r, Retval, Idx, ReqID}, State#state{modstate=ModState1}}.
+
+%% @private
+do_scan(_Sender, {Bucket, Key}, Start, Len, ReqID,
+        State=#state{idx=Idx, mod=Mod, modstate=ModState}) ->
+    {Retval, ModState1} = case Mod:scan(Bucket, Key, Start, Len, ModState) of
+                              {ok, Obj, UpdModState} ->
+                                  {{ok, Obj}, UpdModState};
+                              %% @TODO Eventually it would be good to
+                              %% make the use of not_found or notfound
+                              %% consistent throughout the code.
+                              {error, not_found, UpdModState} ->
+                                  {{error, notfound}, UpdModState};
+                              {error, Reason, UpdModState} ->
+                                  {{error, Reason}, UpdModState};
+                              Err ->
+                                  Err
+                          end,
     {reply, {r, Retval, Idx, ReqID}, State#state{modstate=ModState1}}.
 
 %% @private
@@ -1997,7 +2034,7 @@ wait_for_vnode_status_results(PrefLists, ReqId, Acc) ->
             wait_for_vnode_status_results(UpdPrefLists,
                                           ReqId,
                                           [{Index, Status} | Acc]);
-         _ ->
+        _ ->
             wait_for_vnode_status_results(PrefLists, ReqId, Acc)
     end.
 
@@ -2051,19 +2088,19 @@ handoff_data_encoding_method() ->
 decode_binary_object(BinaryObject) ->
     try binary_to_term(BinaryObject) of
         { Method, BinObj } ->
-                                case Method of
-                                    encode_raw  -> {B, K, Val} = BinObj,
-                                                   BKey = {B, K},
-                                                   {BKey, Val};
+            case Method of
+                encode_raw  -> {B, K, Val} = BinObj,
+                               BKey = {B, K},
+                               {BKey, Val};
 
-                                    _           -> lager:error("Invalid handoff encoding ~p", [Method]),
-                                                   throw(invalid_handoff_encoding)
-                                end;
+                _           -> lager:error("Invalid handoff encoding ~p", [Method]),
+                               throw(invalid_handoff_encoding)
+            end;
 
         _                   ->  lager:error("Request to decode invalid handoff object"),
                                 throw(invalid_handoff_object)
 
-    %% An exception means we have a legacy handoff object:
+                                %% An exception means we have a legacy handoff object:
     catch
         _:_                 -> do_zlib_decode(BinaryObject)
     end.
@@ -2091,17 +2128,17 @@ return_encoded_binary_object(Method, EncodedObject) ->
     term_to_binary({ Method, EncodedObject }).
 
 -spec encode_and_put(
-      Obj::riak_object:riak_object(), Mod::term(), Bucket::riak_object:bucket(),
-      Key::riak_object:key(), IndexSpecs::list(), ModState::term(),
-       MaxCheckFlag::no_max_check | do_max_check) ->
-           {{ok, UpdModState::term()}, EncodedObj::binary()} |
-           {{error, Reason::term(), UpdModState::term()}, EncodedObj::binary()}.
+        Obj::riak_object:riak_object(), Mod::term(), Bucket::riak_object:bucket(),
+        Key::riak_object:key(), IndexSpecs::list(), ModState::term(),
+        MaxCheckFlag::no_max_check | do_max_check) ->
+                            {{ok, UpdModState::term()}, EncodedObj::binary()} |
+                            {{error, Reason::term(), UpdModState::term()}, EncodedObj::binary()}.
 
 encode_and_put(Obj, Mod, Bucket, Key, IndexSpecs, ModState, MaxCheckFlag) ->
     DoMaxCheck = MaxCheckFlag == do_max_check,
     NumSiblings = riak_object:value_count(Obj),
     case DoMaxCheck andalso
-         NumSiblings > app_helper:get_env(riak_kv, max_siblings) of
+        NumSiblings > app_helper:get_env(riak_kv, max_siblings) of
         true ->
             lager:error("Put failure: too many siblings for object ~p/~p (~p)",
                         [Bucket, Key, NumSiblings]),
@@ -2133,7 +2170,7 @@ encode_and_put_no_sib_check(Obj, Mod, Bucket, Key, IndexSpecs, ModState,
             BinSize = size(EncodedVal),
             %% Report or fail on large objects
             case DoMaxCheck andalso
-                 BinSize > app_helper:get_env(riak_kv, max_object_size) of
+                BinSize > app_helper:get_env(riak_kv, max_object_size) of
                 true ->
                     lager:error("Put failure: object too large to write ~p/~p ~p bytes",
                                 [Bucket, Key, BinSize]),
@@ -2142,9 +2179,9 @@ encode_and_put_no_sib_check(Obj, Mod, Bucket, Key, IndexSpecs, ModState,
                 false ->
                     WarnSize = app_helper:get_env(riak_kv, warn_object_size),
                     case BinSize > WarnSize of
-                       true ->
+                        true ->
                             lager:warning("Writing very large object " ++
-                                          "(~p bytes) to ~p/~p",
+                                              "(~p bytes) to ~p/~p",
                                           [BinSize, Bucket, Key]);
                         false ->
                             ok
@@ -2531,12 +2568,12 @@ bitcask_badcrc_test() ->
     file:close(Fh),
     O = riak_object:new(B, K, <<"y">>),
     {noreply, _} = handle_command(?KV_PUT_REQ{bkey={B,K},
-                                               object=O,
-                                               req_id=123,
-                                               start_time=riak_core_util:moment(),
-                                               options=[]},
-                                   {raw, 456, self()},
-                                   S),
+                                              object=O,
+                                              req_id=123,
+                                              start_time=riak_core_util:moment(),
+                                              options=[]},
+                                  {raw, 456, self()},
+                                  S),
     riak_core_ring_manager:cleanup_ets(test),
     riak_kv_test_util:stop_process(riak_core_metadata_manager),
     riak_kv_test_util:stop_process(riak_core_bg_manager),

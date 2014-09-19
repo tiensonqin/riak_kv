@@ -32,6 +32,7 @@
          get/3,
          put/5,
          delete/4,
+         scan/5,
          drop/1,
          fix_index/3,
          mark_indexes_fixed/2,
@@ -60,7 +61,7 @@
 
 -define(API_VERSION, 1).
 -define(CAPABILITIES, [async_fold, indexes, index_reformat, size,
-        iterator_refresh]).
+                       iterator_refresh]).
 -define(FIXED_INDEXES_KEY, fixed_indexes).
 
 -record(state, {ref :: eleveldb:db_ref(),
@@ -224,25 +225,25 @@ index_deletes(FixedIndexes, Bucket, PrimaryKey, Field, Value) ->
     KeyDelete ++ LegacyDelete.
 
 fix_index(IndexKeys, ForUpgrade, #state{ref=Ref,
-                                                read_opts=ReadOpts,
-                                                write_opts=WriteOpts} = State)
-                                        when is_list(IndexKeys) ->
+                                        read_opts=ReadOpts,
+                                        write_opts=WriteOpts} = State)
+  when is_list(IndexKeys) ->
     FoldFun =
         fun(ok, {Success, Ignore, Error}) ->
-               {Success+1, Ignore, Error};
+                {Success+1, Ignore, Error};
            (ignore, {Success, Ignore, Error}) ->
-               {Success, Ignore+1, Error};
+                {Success, Ignore+1, Error};
            ({error, _}, {Success, Ignore, Error}) ->
-               {Success, Ignore, Error+1}
+                {Success, Ignore, Error+1}
         end,
     Totals =
         lists:foldl(FoldFun, {0,0,0},
                     [fix_index(IndexKey, ForUpgrade, Ref, ReadOpts, WriteOpts)
-                        || {_Bucket, IndexKey} <- IndexKeys]),
+                     || {_Bucket, IndexKey} <- IndexKeys]),
     {reply, Totals, State};
 fix_index(IndexKey, ForUpgrade, #state{ref=Ref,
-                                                read_opts=ReadOpts,
-                                                write_opts=WriteOpts} = State) ->
+                                       read_opts=ReadOpts,
+                                       write_opts=WriteOpts} = State) ->
     case fix_index(IndexKey, ForUpgrade, Ref, ReadOpts, WriteOpts) of
         Atom when is_atom(Atom) ->
             {Atom, State};
@@ -253,9 +254,9 @@ fix_index(IndexKey, ForUpgrade, #state{ref=Ref,
 fix_index(IndexKey, ForUpgrade, Ref, ReadOpts, WriteOpts) ->
     case eleveldb:get(Ref, IndexKey, ReadOpts) of
         {ok, _} ->
-            case from_index_key(IndexKey) of 
+            case from_index_key(IndexKey) of
                 {Bucket, Key, Field, Value} ->
-                    
+
                     NewKey = case ForUpgrade of
                                  true -> to_index_key(Bucket, Key, Field, Value);
                                  false -> to_legacy_index_key(Bucket, Key, Field, Value)
@@ -325,6 +326,17 @@ delete(Bucket, PrimaryKey, IndexSpecs, #state{ref=Ref,
             {error, Reason, State}
     end.
 
+scan(Bucket, Key, Start, Len, #state{ref=Ref}=State)->
+    StorageKey = to_object_key(Bucket, Key),
+    case eleveldb:scan(Ref, StorageKey, Start, Len) of
+        {ok, Value} ->
+            {ok, Value, State};
+        not_found  ->
+            {error, not_found, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
 %% @doc Fold over all the buckets
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
                    any(),
@@ -381,20 +393,20 @@ fold_keys(FoldKeysFun, Acc, Opts, #state{fold_opts=FoldOpts,
     ExtraFold = not FixedIdx orelse WriteLegacyIdx,
     KeyFolder =
         fun() ->
-            %% Do the fold. ELevelDB uses throw/1 to break out of a fold...
-            AccFinal =
-                       try
-                           eleveldb:fold_keys(Ref, FoldFun, Acc, FoldOpts1)
-                       catch
-                           {break, BrkResult} ->
-                               BrkResult
-                       end,
-            case ExtraFold of
-                true ->
-                    legacy_key_fold(Ref, FoldFun, AccFinal, FoldOpts1, Limiter);
-                false ->
-                    AccFinal
-            end
+                %% Do the fold. ELevelDB uses throw/1 to break out of a fold...
+                AccFinal =
+                    try
+                        eleveldb:fold_keys(Ref, FoldFun, Acc, FoldOpts1)
+                    catch
+                        {break, BrkResult} ->
+                            BrkResult
+                    end,
+                case ExtraFold of
+                    true ->
+                        legacy_key_fold(Ref, FoldFun, AccFinal, FoldOpts1, Limiter);
+                    false ->
+                        AccFinal
+                end
         end,
     case lists:member(async_fold, Opts) of
         true ->
@@ -696,22 +708,22 @@ fold_keys_fun(FoldKeysFun, {bucket, FilterBucket}) ->
 %% 2i queries
 fold_keys_fun(FoldKeysFun, {index, FilterBucket,
                             Q=?KV_INDEX_Q{filter_field=FilterField,
-                                         term_regex=TermRe}})
+                                          term_regex=TermRe}})
   when FilterField =:= <<"$bucket">>;
        FilterField =:= <<"$key">> ->
     AccFun = case FilterField =:= <<"$key">> andalso TermRe =/= undefined of
-        true ->
-            fun(Bucket, Key, Acc) ->
-                    case re:run(Key, TermRe) of
-                        nomatch -> Acc;
-                        _ -> stoppable_fold(FoldKeysFun, Bucket, Key, Acc)
-                    end
-            end;
-        false ->
-            fun(Bucket, Key, Acc) ->
-                    stoppable_fold(FoldKeysFun, Bucket, Key, Acc)
-            end
-    end,
+                 true ->
+                     fun(Bucket, Key, Acc) ->
+                             case re:run(Key, TermRe) of
+                                 nomatch -> Acc;
+                                 _ -> stoppable_fold(FoldKeysFun, Bucket, Key, Acc)
+                             end
+                     end;
+                 false ->
+                     fun(Bucket, Key, Acc) ->
+                             stoppable_fold(FoldKeysFun, Bucket, Key, Acc)
+                     end
+             end,
 
     %% Inbuilt indexes
     fun(StorageKey, Acc) ->
@@ -726,22 +738,22 @@ fold_keys_fun(FoldKeysFun, {index, FilterBucket,
             end
     end;
 fold_keys_fun(FoldKeysFun, {index, FilterBucket, Q=?KV_INDEX_Q{return_terms=Terms,
-                                                              term_regex=TermRe}}) ->
+                                                               term_regex=TermRe}}) ->
     AccFun = case TermRe =:= undefined of
-        true ->
-            fun(Bucket, _Term, Val, Acc) ->
-                    stoppable_fold(FoldKeysFun, Bucket, Val, Acc)
-            end;
-        false ->
-            fun(Bucket, Term, Val, Acc) ->
-                    case re:run(Term, TermRe) of
-                        nomatch ->
-                            Acc;
-                        _ ->
-                            stoppable_fold(FoldKeysFun, Bucket, Val, Acc)
-                    end
-            end
-    end,
+                 true ->
+                     fun(Bucket, _Term, Val, Acc) ->
+                             stoppable_fold(FoldKeysFun, Bucket, Val, Acc)
+                     end;
+                 false ->
+                     fun(Bucket, Term, Val, Acc) ->
+                             case re:run(Term, TermRe) of
+                                 nomatch ->
+                                     Acc;
+                                 _ ->
+                                     stoppable_fold(FoldKeysFun, Bucket, Val, Acc)
+                             end
+                     end
+             end,
 
     %% User indexes
     fun(StorageKey, Acc) ->
@@ -749,9 +761,9 @@ fold_keys_fun(FoldKeysFun, {index, FilterBucket, Q=?KV_INDEX_Q{return_terms=Term
             case riak_index:index_key_in_range(IndexKey, FilterBucket, Q) of
                 {true, {Bucket, Key, _Field, Term}} ->
                     Val = if
-                        Terms -> {Term, Key};
-                        true -> Key
-                    end,
+                              Terms -> {Term, Key};
+                              true -> Key
+                          end,
                     AccFun(Bucket, Term, Val, Acc);
                 {skip, _IK} ->
                     Acc;
@@ -876,7 +888,7 @@ to_first_key({index, Bucket, Q}) ->
 to_first_key(Other) ->
     erlang:throw({unknown_limiter, Other}).
 
-% @doc If index query, encode key using legacy sext format.
+                                                % @doc If index query, encode key using legacy sext format.
 to_legacy_first_key({index, Bucket, {eq, Field, Term}}) ->
     to_legacy_first_key({index, Bucket, {range, Field, Term, Term}});
 to_legacy_first_key({index, Bucket, {range, Field, StartTerm, _EndTerm}}) ->
@@ -889,7 +901,7 @@ to_object_key(Bucket, Key) ->
 
 from_object_key(LKey) ->
     case (catch sext:decode(LKey)) of
-        {'EXIT', _} -> 
+        {'EXIT', _} ->
             lager:warning("Corrupted object key, discarding"),
             ignore;
         {o, Bucket, Key} ->
@@ -906,7 +918,7 @@ to_legacy_index_key(Bucket, Key, Field, Term) -> %% encode with legacy bignum en
 
 from_index_key(LKey) ->
     case (catch sext:decode(LKey)) of
-        {'EXIT', _} -> 
+        {'EXIT', _} ->
             lager:warning("Corrupted index key, discarding"),
             ignore;
         {i, Bucket, Field, Term, Key} ->
@@ -950,10 +962,10 @@ retry() ->
                                   end
                           end),
         _Pid2 = spawn_link(
-                 fun() ->
-                         Me ! {2, running},
-                         Me ! {2, start(42, [{data_root, Root}])}
-                 end),
+                  fun() ->
+                          Me ! {2, running},
+                          Me ! {2, start(42, [{data_root, Root}])}
+                  end),
         %% Ensure Pid2 is runnng and  give it 10ms to get into the open
         %% so we know it has a lock clash
         receive
@@ -1042,7 +1054,7 @@ eqc_test_() ->
          fun cleanup/1,
          [
           {timeout, 180,
-            [?_assertEqual(true,
+           [?_assertEqual(true,
                           backend_eqc:test(?MODULE, false,
                                            [{data_root,
                                              "test/eleveldb-backend"}]))]}

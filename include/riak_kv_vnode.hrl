@@ -11,6 +11,12 @@
           bkey :: {binary(), binary()},
           req_id :: non_neg_integer()}).
 
+-record(riak_kv_scan_req_v1, {
+          bkey :: {binary(), binary()},
+          start :: non_neg_integer(),
+          len :: non_neg_integer(),
+          req_id :: non_neg_integer()}).
+
 -record(riak_kv_listkeys_req_v2, {
           bucket :: binary()|'_'|tuple(),
           req_id :: non_neg_integer(),
