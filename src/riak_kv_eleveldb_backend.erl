@@ -63,7 +63,7 @@
 -define(CAPABILITIES, [async_fold, indexes, index_reformat, size,
                        iterator_refresh]).
 -define(FIXED_INDEXES_KEY, fixed_indexes).
--define(END_SIGNAL, "$$end").
+-define(END_SIGNAL, <<"$$end">>).
 
 -record(state, {ref :: eleveldb:db_ref(),
                 data_root :: string(),
