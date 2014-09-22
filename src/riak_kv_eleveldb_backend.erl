@@ -351,25 +351,29 @@ iter_loop(I, Key, Start, Len, Elements) ->
     end.
 
 %% TODO add options
-do_scan(Ref, Key, Start, Len) ->
-    {Type, Bucket, DecodeKey} = sext:decode(Key),
-    EndPointKey = <<DecodeKey/binary, ?END_SIGNAL/binary>>,
-    EndPoint = sext:encode({Type, Bucket, EndPointKey}),
-    {ok, I} = eleveldb:iterator(Ref, [], keys_only),
-    %% seed to endpoint
-    case eleveldb:iterator_move(I, EndPoint) of
-        {ok, EndPoint} ->
-            {ok, lists:reverse(iter_loop(I, DecodeKey, Start, Len, []))};
-        {ok, _K} ->
-            not_found;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+do_scan(I, Key, Start, Len) ->
+    try
+        {Type, Bucket, DecodeKey} = sext:decode(Key),
+        EndPointKey = <<DecodeKey/binary, ?END_SIGNAL/binary>>,
+        EndPoint = sext:encode({Type, Bucket, EndPointKey}),
 
+        %% seed to endpoint
+        case eleveldb:iterator_move(I, EndPoint) of
+            {ok, EndPoint} ->
+                {ok, lists:reverse(iter_loop(I, DecodeKey, Start, Len, []))};
+            {ok, _K} ->
+                not_found;
+            {error, Reason} ->
+                {error, Reason}
+        end
+    after
+        eleveldb:iterator_close(I)
+    end.
 
 scan(Bucket, Key, Start, Len, #state{ref=Ref}=State)->
     StorageKey = to_object_key(Bucket, Key),
-    case do_scan(Ref, StorageKey, Start, Len) of
+    {ok, I} = eleveldb:iterator(Ref, [], keys_only),
+    case do_scan(I, StorageKey, Start, Len) of
         {ok, Value} ->
             {ok, Value, State};
         not_found  ->
