@@ -355,12 +355,12 @@ do_scan(Ref, Key, Start, Len) ->
     {Type, Bucket, DecodeKey} = sext:decode(Key),
     EndPointKey = <<DecodeKey/binary, ?END_SIGNAL/binary>>,
     EndPoint = sext:encode({Type, Bucket, EndPointKey}),
-    {ok, I} = eleveldb:iterator(Ref, []),
+    {ok, I} = eleveldb:iterator(Ref, [], keys_only),
     %% seed to endpoint
     case eleveldb:iterator_move(I, EndPoint) of
-        {ok, EndPoint, _V} ->
+        {ok, EndPoint} ->
             {ok, lists:reverse(iter_loop(I, DecodeKey, Start, Len, []))};
-        {ok, _K, _V} ->
+        {ok, _K} ->
             not_found;
         {error, Reason} ->
             {error, Reason}
