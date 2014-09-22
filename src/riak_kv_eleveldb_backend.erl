@@ -63,6 +63,7 @@
 -define(CAPABILITIES, [async_fold, indexes, index_reformat, size,
                        iterator_refresh]).
 -define(FIXED_INDEXES_KEY, fixed_indexes).
+-define(END_SIGNAL, "$$end").
 
 -record(state, {ref :: eleveldb:db_ref(),
                 data_root :: string(),
@@ -326,9 +327,49 @@ delete(Bucket, PrimaryKey, IndexSpecs, #state{ref=Ref,
             {error, Reason, State}
     end.
 
+%% TODO bettern bit pattern matching
+iter_loop(_I, _Key, _Start, Len, Elements) when length(Elements) =:= Len ->
+    Elements;
+iter_loop(I, Key, Start, Len, Elements) ->
+    case eleveldb:iterator_move(I, prev) of
+        {ok, E, _Val} ->
+            if Start > 0 ->
+                    iter_loop(I, Key, Start-1, Len, Elements);
+               true ->
+                    {_Type, _Bucket, DK} = sext:decode(E),
+                    K0 = binary_to_list(Key),
+                    E0 = binary_to_list(DK),
+                    case string:tokens(E0, "$$") of
+                        [K0, Element] ->
+                            iter_loop(I, Key, Start, Len, [Element|Elements]);
+                        _Else ->
+                            Elements
+                    end
+            end;
+        {error, iterator_closed} ->
+            Elements
+    end.
+
+%% TODO add options
+do_scan(Ref, Key, Start, Len) ->
+    {Type, Bucket, DecodeKey} = sext:decode(Key),
+    EndPointKey = <<DecodeKey/binary, ?END_SIGNAL/binary>>,
+    EndPoint = sext:encode({Type, Bucket, EndPointKey}),
+    {ok, I} = eleveldb:iterator(Ref, []),
+    %% seed to endpoint
+    case eleveldb:iterator_move(I, EndPoint) of
+        {ok, EndPoint, _V} ->
+            {ok, lists:reverse(iter_loop(I, DecodeKey, Start, Len, []))};
+        {ok, _K, _V} ->
+            not_found;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
 scan(Bucket, Key, Start, Len, #state{ref=Ref}=State)->
     StorageKey = to_object_key(Bucket, Key),
-    case eleveldb:scan(Ref, StorageKey, Start, Len) of
+    case do_scan(Ref, StorageKey, Start, Len) of
         {ok, Value} ->
             {ok, Value, State};
         not_found  ->
