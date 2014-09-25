@@ -212,7 +212,7 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
 %% @private
 execute(timeout, StateData0=#state{timeout=Timeout,req_id=ReqId,
                                    bkey=BKey,offset=Offset,len=Len,
-                                   order=Order
+                                   order=Order,
                                    preflist2 = Preflist2}) ->
     TRef = schedule_timeout(Timeout),
     Preflist = [IndexNode || {IndexNode, _Type} <- Preflist2],
