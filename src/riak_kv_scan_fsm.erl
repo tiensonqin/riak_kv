@@ -27,7 +27,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -export([test_link/7, test_link/5]).
 -endif.
--export([start_link/4]).
+-export([start_link/7]).
 -export([init/1, handle_event/3, handle_sync_event/4,
          handle_info/3, terminate/3, code_change/4]).
 %% -export([prepare/2,validate/2,execute/2,waiting_vnode_r/2]).
@@ -55,7 +55,8 @@
                 timeout :: infinity | pos_integer(),
                 tref    :: reference(),
                 bkey :: {riak_object:bucket(), riak_object:key()},
-                start :: non_neg_integer(),
+                offset :: non_neg_integer(),
+                order :: atom(),
                 len :: non_neg_integer(),
                 bucket_props,
                 startnow :: {non_neg_integer(), non_neg_integer(), non_neg_integer()},
@@ -81,10 +82,10 @@
 %%                             in some failure cases.
 %% {notfound_ok, boolean()}  - Count notfound reponses as successful.
 %% {timeout, pos_integer() | infinity} -  Timeout for vnode responses
--spec start_link({raw, req_id(), pid()}, binary(), binary(), options()) ->
-                        {ok, pid()} | {error, any()}.
-start_link(From, Bucket, Key, GetOptions) ->
-    Args = [From, Bucket, Key, GetOptions, true],
+%% -spec start_link({raw, req_id(), pid()}, binary(), binary(), options()) ->
+%%                         {ok, pid()} | {error, any()}.
+start_link(From, Bucket, Key, Offset, Len, Order, ScanOptions) ->
+    Args = [From, Bucket, Key, Offset, Len, Order, ScanOptions],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
@@ -92,14 +93,15 @@ start_link(From, Bucket, Key, GetOptions) ->
 %% ====================================================================
 
 %% @private
-init([From, Bucket, Key, Start, Len, Options0, _Monitor]) ->
+init([From, Bucket, Key, Offset, Len, Order, Options0]) ->
     StartNow = os:timestamp(),
     Options = proplists:unfold(Options0),
     StateData = #state{from = From,
                        options = Options,
                        bkey = {Bucket, Key},
-                       start = Start,
+                       offset = Offset,
                        len = Len,
+                       order = Order,
                        timing = riak_kv_fsm_timing:add_timing(prepare, []),
                        startnow = StartNow},
     {ok, prepare, StateData, 0}.
@@ -209,11 +211,12 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
 
 %% @private
 execute(timeout, StateData0=#state{timeout=Timeout,req_id=ReqId,
-                                   bkey=BKey,start=Start,len=Len,
+                                   bkey=BKey,offset=Offset,len=Len,
+                                   order=Order
                                    preflist2 = Preflist2}) ->
     TRef = schedule_timeout(Timeout),
     Preflist = [IndexNode || {IndexNode, _Type} <- Preflist2],
-    riak_kv_vnode:scan(Preflist, BKey, Start, Len, ReqId),
+    riak_kv_vnode:scan(Preflist, BKey, Offset, Len, Order, ReqId),
     StateData = StateData0#state{tref=TRef},
     new_state(waiting_vnode_r, StateData).
 

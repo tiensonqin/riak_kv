@@ -13,8 +13,9 @@
 
 -record(riak_kv_scan_req_v1, {
           bkey :: {binary(), binary()},
-          start :: non_neg_integer(),
+          offset :: non_neg_integer(),
           len :: non_neg_integer(),
+          order :: atom(), % prev or next
           req_id :: non_neg_integer()}).
 
 -record(riak_kv_listkeys_req_v2, {

@@ -215,13 +215,14 @@ del(Preflist, BKey, ReqId) ->
                                                   req_id=ReqId},
                                    riak_kv_vnode_master).
 
-scan(Preflist, BKey, Start, Len, ReqId) ->
-    scan(Preflist, BKey, Start, Len, ReqId, {fsm, undefined, self()}).
+scan(Preflist, BKey, Offset, Len, Order, ReqId) ->
+    scan(Preflist, BKey, Offset, Len, ReqId, {fsm, undefined, self()}).
 
-scan(Preflist, BKey, Start, Len, ReqId, Sender) ->
+scan(Preflist, BKey, Offset, Len, Order, ReqId, Sender) ->
     Req = ?KV_SCAN_REQ{bkey=sanitize_bkey(BKey),
-                       start=Start,
+                       offset=Offset,
                        len=Len,
+                       order=Order,
                        req_id=ReqId},
     riak_core_vnode_master:command(Preflist,
                                    Req,

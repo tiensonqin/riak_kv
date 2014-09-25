@@ -26,6 +26,7 @@
 
 -export([new/2]).
 -export([get/3,get/4,get/5]).
+-export([scan/7, scan/6]).
 -export([put/2,put/3,put/4,put/5,put/6]).
 -export([delete/3,delete/4,delete/5]).
 -export([delete_vclock/4,delete_vclock/5,delete_vclock/6]).
@@ -174,11 +175,29 @@ get(Bucket, Key, R, {?MODULE, [_Node, _ClientId]}=THIS) ->
 %% @doc Fetch the object at Bucket/Key.  Return a value as soon as R
 %%      nodes have responded with a value or error, or TimeoutMillisecs passes.
 get(Bucket, Key, R, Timeout, {?MODULE, [_Node, _ClientId]}=THIS) when
-                                  (is_binary(Bucket) orelse is_tuple(Bucket)),
-                                  is_binary(Key),
-                                  (is_atom(R) or is_integer(R)),
-                                  is_integer(Timeout) ->
+      (is_binary(Bucket) orelse is_tuple(Bucket)),
+      is_binary(Key),
+      (is_atom(R) or is_integer(R)),
+      is_integer(Timeout) ->
     get(Bucket, Key, [{r, R}, {timeout, Timeout}], THIS).
+
+
+scan(Bucket, Key, Offset, Len, Order, {?MODULE, [_Node, _ClientId]}=THIS) ->
+    scan(Bucket, Key, Offset, Len, Order, [{timeout, 3000}], THIS).
+
+scan(Bucket, Key, Offset, Len, Order, Options, {?MODULE, [Node, _ClientId]}) ->
+    Me = self(),
+    ReqId = mk_reqid(),
+    case node() of
+        Node ->
+            riak_kv_scan_fsm:start_link({raw, ReqId, Me}, Bucket, Key, Offset, Len, Order, Options);
+        _ ->
+            proc_lib:spawn_link(Node, riak_kv_scan_fsm, start_link,
+                                [{raw, ReqId, Me}, Bucket, Key, Offset, Len, Order, Options])
+    end,
+    %% TODO: Investigate adding a monitor here and eliminating the timeout.
+    Timeout = recv_timeout(Options),
+    wait_for_reqid(ReqId, Timeout).
 
 
 %% @spec put(RObj :: riak_object:riak_object(), riak_client()) ->
@@ -231,9 +250,9 @@ consistent_put(RObj, Options, {?MODULE, [Node, _ClientId]}) ->
                      riak_ensemble_client:kupdate(Node, Ensemble, BKey, RObj, NewObj, Timeout);
                  put_once ->
                      riak_ensemble_client:kput_once(Node, Ensemble, BKey, NewObj, Timeout)
-                %% TODO: Expose client option to explicitly request overwrite
-                 %overwrite ->
-                     %riak_ensemble_client:kover(Node, Ensemble, BKey, NewObj, Timeout)
+                     %% TODO: Expose client option to explicitly request overwrite
+                                                %overwrite ->
+                                                %riak_ensemble_client:kover(Node, Ensemble, BKey, NewObj, Timeout)
              end,
     maybe_update_consistent_stat(Node, consistent_put, Bucket, StartTS, Result),
     ReturnBody = lists:member(returnbody, Options),
@@ -577,7 +596,7 @@ filter_keys(Bucket, Fun, {?MODULE, [_Node, _ClientId]}=THIS) ->
 %%      Key lists are updated asynchronously, so this may be slightly
 %%      out of date if called immediately after a put or delete.
 filter_keys(Bucket, Fun, Timeout, {?MODULE, [_Node, _ClientId]}=THIS) ->
-            list_keys(Bucket, Fun, Timeout, THIS).
+    list_keys(Bucket, Fun, Timeout, THIS).
 
 %% @spec list_buckets(riak_client()) ->
 %%       {ok, [Bucket :: riak_object:bucket()]} |
@@ -713,14 +732,14 @@ get_index(Bucket, Query, Opts, {?MODULE, [Node, _ClientId]}) ->
 %% @doc Run the provided index query, return a stream handle.
 -spec stream_get_index(Bucket :: binary(), Query :: riak_index:query_def(),
                        riak_client()) ->
-    {ok, ReqId :: term(), FSMPid :: pid()} | {error, Reason :: term()}.
+                              {ok, ReqId :: term(), FSMPid :: pid()} | {error, Reason :: term()}.
 stream_get_index(Bucket, Query, {?MODULE, [_Node, _ClientId]}=THIS) ->
     stream_get_index(Bucket, Query, [{timeout, ?DEFAULT_TIMEOUT}], THIS).
 
 %% @doc Run the provided index query, return a stream handle.
 -spec stream_get_index(Bucket :: binary(), Query :: riak_index:query_def(),
                        Opts :: proplists:proplist(), riak_client()) ->
-    {ok, ReqId :: term(), FSMPid :: pid()} | {error, Reason :: term()}.
+                              {ok, ReqId :: term(), FSMPid :: pid()} | {error, Reason :: term()}.
 stream_get_index(Bucket, Query, Opts, {?MODULE, [Node, _ClientId]}) ->
     Timeout = proplists:get_value(timeout, Opts, ?DEFAULT_TIMEOUT),
     MaxResults = proplists:get_value(max_results, Opts, all),
