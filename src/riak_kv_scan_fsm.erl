@@ -88,7 +88,6 @@ start_link(From, Bucket, Key, Offset, Len, Order, Options) ->
 
 %% @private
 init([From, Bucket, Key, Offset, Len, Order, Options0, _Monitor]) ->
-    StartNow = os:timestamp(),
     Options = proplists:unfold(Options0),
     StateData = #state{from = From,
                        options = Options,
