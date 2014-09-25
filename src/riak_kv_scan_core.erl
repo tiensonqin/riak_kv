@@ -1,6 +1,7 @@
 -module(riak_kv_scan_core).
 
--export([add_result/3,
+-export([init/3,
+         add_result/3,
          enough/1,
          response/1]).
 
@@ -25,6 +26,11 @@
                    num_fail = 0 :: non_neg_integer()}).
 
 -opaque scancore() :: #scancore{}.
+
+init(N, R, FailThreshold) ->
+    #scancore{n = N,
+              r = R,
+              fail_threshold = FailThreshold}.
 
 add_result(Idx, {error, notfound} = Result, ScanCore) ->
     ScanCore#scancore{

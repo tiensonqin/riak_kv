@@ -133,10 +133,24 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
             UpNodes = riak_core_node_watcher:nodes(riak_kv),
             Preflist2 =  riak_core_apl:get_apl_ann(DocIdx, N, UpNodes),
 
-            new_state_timeout(execute, StateData#state{n = N,
-                                                       bucket_props=Props,
-                                                       preflist2 = Preflist2})
+            new_state_timeout(validate, StateData#state{n = N,
+                                                        bucket_props=Props,
+                                                        preflist2 = Preflist2})
     end.
+
+%% @private
+validate(timeout, StateData=#state{from = {raw, ReqId, _Pid}, options = Options,
+                                   n = N, bucket_props = _BucketProps, preflist2 = _PL2}) ->
+    AppEnvTimeout = app_helper:get_env(riak_kv, timeout),
+    Timeout = case AppEnvTimeout of
+                  undefined -> get_option(timeout, Options, ?DEFAULT_TIMEOUT);
+                  _ -> AppEnvTimeout
+              end,
+
+    ScanCore = riak_kv_scan_core:init(N, R, 2),
+    new_state_timeout(execute, StateData#state{scan_core = ScanCore,
+                                               timeout = Timeout,
+                                               req_id = ReqId}).
 
 %% %% @private
 %% validate(timeout, StateData=#state{from = {raw, ReqId, _Pid}, options = Options,
@@ -201,16 +215,10 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
 %%     ok.
 
 %% @private
-execute(timeout, StateData0=#state{req_id=ReqId,
+execute(timeout, StateData0=#state{req_id=ReqId,timeout=Timeout
                                    bkey=BKey,offset=Offset,len=Len,
                                    order=Order, options=Options,
                                    preflist2 = Preflist2}) ->
-    AppEnvTimeout = app_helper:get_env(riak_kv, timeout),
-    Timeout = case AppEnvTimeout of
-                  undefined -> get_option(timeout, Options, ?DEFAULT_TIMEOUT);
-                  _ -> AppEnvTimeout
-              end,
-
     TRef = schedule_timeout(Timeout),
     Preflist = [IndexNode || {IndexNode, _Type} <- Preflist2],
     riak_kv_vnode:scan(Preflist, BKey, Offset, Len, Order, ReqId),
