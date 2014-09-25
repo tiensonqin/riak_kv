@@ -32,9 +32,17 @@ init(N, R, FailThreshold) ->
               r = R,
               fail_threshold = FailThreshold}.
 
+add_result(Idx, {ok, _RObj} = Result, ScanCore) ->
+    ScanCore#scancore{
+      results = [{Idx, Result}|ScanCore#scancore.results],
+      merged = undefined,
+      num_ok = ScanCore#scancore.num_ok + 1};
 add_result(Idx, {error, notfound} = Result, ScanCore) ->
     ScanCore#scancore{
-      results = [{Idx, Result}|ScanCore#scancore.results]};
+      results = [{Idx, Result}|ScanCore#scancore.results],
+      merged = undefined
+      %% num_notfound = ScanCore#scancore.num_notfound + 1
+     };
 add_result(Idx, {error, _Reason} = Result, ScanCore) ->
     ScanCore#scancore{
       results = [{Idx, Result}|ScanCore#scancore.results],
