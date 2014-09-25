@@ -94,18 +94,18 @@
 
 %% N.B. The ?INDEX macro should be called any time the object bytes on
 %% disk are modified.
--ifdef(TEST).
-%% Use values so that test compile doesn't give 'unused vars' warning.
--define(INDEX(A,B,C), _=element(1,{A,B,C}), ok).
--else.
--define(INDEX(Obj, Reason, Partition), yz_kv:index(Obj, Reason, Partition)).
--endif.
+%% -ifdef(TEST).
+%% %% Use values so that test compile doesn't give 'unused vars' warning.
+%% -define(INDEX(A,B,C), _=element(1,{A,B,C}), ok).
+%% -else.
+%% -define(INDEX(Obj, Reason, Partition), yz_kv:index(Obj, Reason, Partition)).
+%% -endif.
 
--ifdef(TEST).
--define(YZ_SHOULD_HANDOFF(X), true).
--else.
--define(YZ_SHOULD_HANDOFF(X), yz_kv:should_handoff(X)).
--endif.
+%% -ifdef(TEST).
+%% -define(YZ_SHOULD_HANDOFF(X), true).
+%% -else.
+%% -define(YZ_SHOULD_HANDOFF(X), yz_kv:should_handoff(X)).
+%% -endif.
 
 -record(mrjob, {cachekey :: term(),
                 bkey :: term(),
@@ -953,7 +953,8 @@ request_hash(_Req) ->
 
 handoff_starting({_HOType, TargetNode}=_X, State=#state{handoffs_rejected=RejectCount}) ->
     MaxRejects = app_helper:get_env(riak_kv, handoff_rejected_max, 6),
-    case MaxRejects =< RejectCount orelse ?YZ_SHOULD_HANDOFF(_X) of
+    %% case MaxRejects =< RejectCount orelse ?YZ_SHOULD_HANDOFF(_X) of
+    case MaxRejects =< RejectCount of
         true ->
             {true, State#state{in_handoff=true, handoff_target=TargetNode}};
         false ->
@@ -1236,7 +1237,7 @@ do_backend_delete(BKey, RObj, State = #state{idx = Idx,
     {Bucket, Key} = BKey,
     case Mod:delete(Bucket, Key, IndexSpecs, ModState) of
         {ok, UpdModState} ->
-            ?INDEX(RObj, delete, Idx),
+            %% ?INDEX(RObj, delete, Idx),
             delete_from_hashtree(Bucket, Key, State),
             maybe_cache_evict(BKey, State),
             update_index_delete_stats(IndexSpecs),
@@ -1434,7 +1435,7 @@ actual_put(BKey={Bucket, Key}, Obj, IndexSpecs, RB, ReqID,
         {{ok, UpdModState}, EncodedVal} ->
             update_hashtree(Bucket, Key, EncodedVal, State),
             maybe_cache_object(BKey, Obj, State),
-            ?INDEX(Obj, put, Idx),
+            %% ?INDEX(Obj, put, Idx),
             case RB of
                 true ->
                     Reply = {dw, Idx, Obj, ReqID};
@@ -1857,7 +1858,7 @@ do_diffobj_put({Bucket, Key}=BKey, DiffObj,
                     update_hashtree(Bucket, Key, DiffObj, StateData),
                     update_index_write_stats(IndexBackend, IndexSpecs),
                     update_vnode_stats(vnode_put, Idx, StartTS),
-                    ?INDEX(DiffObj, handoff, Idx),
+                    %% ?INDEX(DiffObj, handoff, Idx),
                     InnerRes;
                 {InnerRes, _Val} ->
                     InnerRes
@@ -1883,7 +1884,7 @@ do_diffobj_put({Bucket, Key}=BKey, DiffObj,
                             update_hashtree(Bucket, Key, AMObj, StateData),
                             update_index_write_stats(IndexBackend, IndexSpecs),
                             update_vnode_stats(vnode_put, Idx, StartTS),
-                            ?INDEX(AMObj, handoff, Idx),
+                            %% ?INDEX(AMObj, handoff, Idx),
                             InnerRes;
                         {InnerRes, _EncodedVal} ->
                             InnerRes
