@@ -58,13 +58,7 @@
                 offset :: non_neg_integer(),
                 order :: atom(),
                 len :: non_neg_integer(),
-                bucket_props,
-                startnow :: {non_neg_integer(), non_neg_integer(), non_neg_integer()},
-                get_usecs :: non_neg_integer(),
-                timing = [] :: [{atom(), erlang:timestamp()}],
-                calculated_timings :: {ResponseUSecs::non_neg_integer(),
-                                       [{StateName::atom(), TimeUSecs::non_neg_integer()}]} | undefined
-               }).
+                bucket_props}).
 
 -define(DEFAULT_TIMEOUT, 60000).
 -define(DEFAULT_R, default).
@@ -84,8 +78,8 @@
 %% {timeout, pos_integer() | infinity} -  Timeout for vnode responses
 %% -spec start_link({raw, req_id(), pid()}, binary(), binary(), options()) ->
 %%                         {ok, pid()} | {error, any()}.
-start_link(From, Bucket, Key, Offset, Len, Order, ScanOptions) ->
-    Args = [From, Bucket, Key, Offset, Len, Order, ScanOptions],
+start_link(From, Bucket, Key, Offset, Len, Order, Options) ->
+    Args = [From, Bucket, Key, Offset, Len, Order, Options, true],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
@@ -93,7 +87,7 @@ start_link(From, Bucket, Key, Offset, Len, Order, ScanOptions) ->
 %% ====================================================================
 
 %% @private
-init([From, Bucket, Key, Offset, Len, Order, Options0]) ->
+init([From, Bucket, Key, Offset, Len, Order, Options0, _Monitor]) ->
     StartNow = os:timestamp(),
     Options = proplists:unfold(Options0),
     StateData = #state{from = From,
@@ -101,9 +95,7 @@ init([From, Bucket, Key, Offset, Len, Order, Options0]) ->
                        bkey = {Bucket, Key},
                        offset = Offset,
                        len = Len,
-                       order = Order,
-                       timing = riak_kv_fsm_timing:add_timing(prepare, []),
-                       startnow = StartNow},
+                       order = Order},
     {ok, prepare, StateData, 0}.
 
 %% @private
@@ -287,9 +279,7 @@ schedule_timeout(infinity) ->
 schedule_timeout(Timeout) ->
     erlang:send_after(Timeout, self(), request_timeout).
 
-client_reply(Reply, StateData = #state{from = {raw, ReqId, Pid},
-                                       timing = Timing}) ->
-    NewTiming = riak_kv_fsm_timing:add_timing(reply, Timing),
+client_reply(Reply, StateData = #state{from = {raw, ReqId, Pid}}) ->
     Msg = {ReqId, Reply},
     Pid ! Msg,
-    StateData#state{timing = NewTiming}.
+    StateData.
