@@ -140,13 +140,15 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
 
 %% @private
 validate(timeout, StateData=#state{from = {raw, ReqId, _Pid}, options = Options,
-                                   n = N, bucket_props = _BucketProps, preflist2 = _PL2}) ->
+                                   n = N, bucket_props = BucketProps, preflist2 = _PL2}) ->
     AppEnvTimeout = app_helper:get_env(riak_kv, timeout),
     Timeout = case AppEnvTimeout of
                   undefined -> get_option(timeout, Options, ?DEFAULT_TIMEOUT);
                   _ -> AppEnvTimeout
               end,
 
+    R0 = get_option(r, Options, ?DEFAULT_R),
+    R = riak_kv_util:expand_rw_value(r, R0, BucketProps, N),
     ScanCore = riak_kv_scan_core:init(N, R, 2),
     new_state_timeout(execute, StateData#state{scan_core = ScanCore,
                                                timeout = Timeout,
@@ -215,7 +217,7 @@ validate(timeout, StateData=#state{from = {raw, ReqId, _Pid}, options = Options,
 %%     ok.
 
 %% @private
-execute(timeout, StateData0=#state{req_id=ReqId,timeout=Timeout
+execute(timeout, StateData0=#state{req_id=ReqId,timeout=Timeout,
                                    bkey=BKey,offset=Offset,len=Len,
                                    order=Order, options=Options,
                                    preflist2 = Preflist2}) ->
