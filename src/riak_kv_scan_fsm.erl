@@ -51,7 +51,6 @@
                 n :: pos_integer(),
                 preflist2 :: riak_core_apl:preflist2(),
                 req_id :: non_neg_integer(),
-                starttime :: pos_integer(),
                 timeout :: infinity | pos_integer(),
                 tref    :: reference(),
                 bkey :: {riak_object:bucket(), riak_object:key()},
@@ -79,7 +78,7 @@
 %% -spec start_link({raw, req_id(), pid()}, binary(), binary(), options()) ->
 %%                         {ok, pid()} | {error, any()}.
 start_link(From, Bucket, Key, Offset, Len, Order, Options) ->
-    Args = [From, Bucket, Key, Offset, Len, Order, Options, true],
+    Args = [From, Bucket, Key, Offset, Len, Order, Options],
     gen_fsm:start_link(?MODULE, Args, []).
 
 %% ====================================================================
@@ -87,7 +86,7 @@ start_link(From, Bucket, Key, Offset, Len, Order, Options) ->
 %% ====================================================================
 
 %% @private
-init([From, Bucket, Key, Offset, Len, Order, Options0, _Monitor]) ->
+init([From, Bucket, Key, Offset, Len, Order, Options0]) ->
     Options = proplists:unfold(Options0),
     StateData = #state{from = From,
                        options = Options,
@@ -132,8 +131,7 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
             UpNodes = riak_core_node_watcher:nodes(riak_kv),
             Preflist2 =  riak_core_apl:get_apl_ann(DocIdx, N, UpNodes),
 
-            new_state_timeout(execute, StateData#state{starttime=riak_core_util:moment(),
-                                                       n = N,
+            new_state_timeout(execute, StateData#state{n = N,
                                                        bucket_props=Props,
                                                        preflist2 = Preflist2})
     end.

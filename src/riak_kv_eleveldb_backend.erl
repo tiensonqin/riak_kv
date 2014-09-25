@@ -32,7 +32,7 @@
          get/3,
          put/5,
          delete/4,
-         scan/5,
+         scan/6,
          drop/1,
          fix_index/3,
          mark_indexes_fixed/2,
@@ -352,18 +352,15 @@ iter_loop(I, Point, Offset, Len, Order, Elements) ->
             Elements
     end.
 
-get_point(Bucket, Key, prev, StartPoint0) ->
-    StartPoint = case StartPoint0 of
-                     undefined -> <<Key/binary, ?END_SIGNAL/binary>>;
-                     _ -> StartPoint0
+get_point(Bucket, Key, prev) ->
+    K0 = binary_to_list(Key),
+    StartPoint = case string:tokens(K0, "$$") of
+                     [_A, _B] -> Key;
+                     _ -> <<Key/binary, ?END_SIGNAL/binary>>
                  end,
     to_object_key(Bucket, StartPoint);
-get_point(Bucket, Key, next, StartPoint0) ->
-    StartPoint = case StartPoint0 of
-                     undefined -> Key;
-                     _ -> StartPoint0
-                 end,
-    to_object_key(Bucket, StartPoint).
+get_point(Bucket, Key, next) ->
+    to_object_key(Bucket, Key).
 
 
 do_scan(I, Point, Offset, Len, Order, State) ->
@@ -393,13 +390,10 @@ iter_scan(I, Point, Offset, Len, Order) ->
 %% scan_opts
 %% Order() - prev | next, default to prev
 %% start_point
-scan(Bucket, Key, Offset, Len, #state{ref=Ref,
-                                      scan_opts=ScanOpts}=State)->
+scan(Bucket, Key, Offset, Len, Order, #state{ref=Ref}=State)->
 
     {ok, I} = eleveldb:iterator(Ref, [], keys_only),
-    Order = proplists:get_value(order, ScanOpts),
-    StartPoint = proplists:get_value(start_point, ScanOpts),
-    Point = get_point(Bucket, Key, Order, StartPoint),
+    Point = get_point(Bucket, Key, Order),
     do_scan(I, Point, Offset, Len, Order, State).
 
 %% @doc Fold over all the buckets
