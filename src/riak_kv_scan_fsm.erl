@@ -27,10 +27,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -export([test_link/7, test_link/5]).
 -endif.
--export([start/6, start_link/6, start_link/4]).
+-export([start_link/4]).
 -export([init/1, handle_event/3, handle_sync_event/4,
          handle_info/3, terminate/3, code_change/4]).
--export([prepare/2,validate/2,execute/2,waiting_vnode_r/2]).
+%% -export([prepare/2,validate/2,execute/2,waiting_vnode_r/2]).
+-export([prepare/2,execute/2,waiting_vnode_r/2]).
 
 -type option() :: {r, pos_integer()} |         %% Minimum number of successful responses
                   {pr, non_neg_integer()} |    %% Minimum number of primary vnodes participating
@@ -218,7 +219,7 @@ execute(timeout, StateData0=#state{timeout=Timeout,req_id=ReqId,
 
 
 %% @private
-waiting_vnode_r({r, VnodeResult, Idx, _ReqId}, StateData) ->
+waiting_vnode_r({r, VnodeResult, _Idx, _ReqId}, StateData) ->
     client_reply(VnodeResult, StateData);
 %% UpdGetCore = riak_kv_get_core:add_result(Idx, VnodeResult, GetCore),
 %% case riak_kv_get_core:enough(UpdGetCore) of
