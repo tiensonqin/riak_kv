@@ -260,16 +260,11 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% Internal functions
 %% ====================================================================
 
-%% Move to the new state, marking the time it started
-new_state(StateName, StateData) ->
-    {next_state, StateName, add_timing(StateName, StateData)};
 new_state(StateName, StateData) ->
     {next_state, StateName, StateData}.
 
 %% Move to the new state, marking the time it started and trigger an immediate
 %% timeout.
-new_state_timeout(StateName, StateData) ->
-    {next_state, StateName, add_timing(StateName, StateData), 0};
 new_state_timeout(StateName, StateData) ->
     {next_state, StateName, StateData, 0}.
 
@@ -295,7 +290,3 @@ client_reply(Reply, StateData = #state{from = {raw, ReqId, Pid},
     Msg = {ReqId, Reply},
     Pid ! Msg,
     StateData#state{timing = NewTiming}.
-
-%% Add timing information to the state
-add_timing(Stage, State = #state{timing = Timing}) ->
-    State#state{timing = riak_kv_fsm_timing:add_timing(Stage, Timing)}.
