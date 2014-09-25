@@ -219,7 +219,7 @@ validate(timeout, StateData=#state{from = {raw, ReqId, _Pid}, options = Options,
 %% @private
 execute(timeout, StateData0=#state{req_id=ReqId,timeout=Timeout,
                                    bkey=BKey,offset=Offset,len=Len,
-                                   order=Order, options=Options,
+                                   order=Order,
                                    preflist2 = Preflist2}) ->
     TRef = schedule_timeout(Timeout),
     Preflist = [IndexNode || {IndexNode, _Type} <- Preflist2],
