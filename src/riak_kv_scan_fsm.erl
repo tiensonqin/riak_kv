@@ -113,6 +113,7 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
         end,
     DocIdx = riak_core_util:chash_key(BKey, BucketProps),
     Bucket_N = get_option(n_val, BucketProps),
+
     N = case get_option(n_val, Options) of
             undefined ->
                 Bucket_N;
@@ -199,16 +200,21 @@ prepare(timeout, StateData=#state{bkey=BKey={Bucket,_Key},
 %%     ok.
 
 %% @private
-execute(timeout, StateData0=#state{timeout=Timeout,req_id=ReqId,
+execute(timeout, StateData0=#state{req_id=ReqId,
                                    bkey=BKey,offset=Offset,len=Len,
-                                   order=Order,
+                                   order=Order, options=Options,
                                    preflist2 = Preflist2}) ->
+    AppEnvTimeout = app_helper:get_env(riak_kv, timeout),
+    Timeout = case AppEnvTimeout of
+                  undefined -> get_option(timeout, Options, ?DEFAULT_TIMEOUT);
+                  _ -> AppEnvTimeout
+              end,
+
     TRef = schedule_timeout(Timeout),
     Preflist = [IndexNode || {IndexNode, _Type} <- Preflist2],
     riak_kv_vnode:scan(Preflist, BKey, Offset, Len, Order, ReqId),
     StateData = StateData0#state{tref=TRef},
     new_state(waiting_vnode_r, StateData).
-
 
 %% @private
 waiting_vnode_r({r, VnodeResult, _Idx, _ReqId}, StateData) ->
