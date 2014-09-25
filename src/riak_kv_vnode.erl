@@ -51,8 +51,8 @@
          request_hashtree_pid/2,
          reformat_object/2,
          stop_fold/1,
-         scan/5,
-         scan/6]).
+         scan/6,
+         scan/7]).
 
 %% riak_core_vnode API
 -export([init/1,
@@ -506,8 +506,8 @@ handle_command(?KV_PUT_REQ{bkey=BKey,
 handle_command(?KV_GET_REQ{bkey=BKey,req_id=ReqId},Sender,State) ->
     do_get(Sender, BKey, ReqId, State);
 
-handle_command(?KV_SCAN_REQ{bkey=BKey,start=Start,len=Len,req_id=ReqId},Sender,State) ->
-    do_scan(Sender, BKey, Start, Len, ReqId, State);
+handle_command(?KV_SCAN_REQ{bkey=BKey,offset=Offset,len=Len,order=Order,req_id=ReqId},Sender,State) ->
+    do_scan(Sender, BKey, Offset, Len, Order, ReqId, State);
 
 handle_command(#riak_kv_listkeys_req_v2{bucket=Input, req_id=ReqId, caller=Caller}, _Sender,
                State=#state{async_folding=AsyncFolding,
@@ -1534,9 +1534,9 @@ do_get(_Sender, BKey, ReqID,
     {reply, {r, Retval, Idx, ReqID}, State#state{modstate=ModState1}}.
 
 %% @private
-do_scan(_Sender, {Bucket, Key}, Start, Len, ReqID,
+do_scan(_Sender, {Bucket, Key}, Offset, Len, Order, ReqID,
         State=#state{idx=Idx, mod=Mod, modstate=ModState}) ->
-    {Retval, ModState1} = case Mod:scan(Bucket, Key, Start, Len, ModState) of
+    {Retval, ModState1} = case Mod:scan(Bucket, Key, Offset, Len, Order, ModState) of
                               {ok, Obj, UpdModState} ->
                                   {{ok, Obj}, UpdModState};
                               %% @TODO Eventually it would be good to
