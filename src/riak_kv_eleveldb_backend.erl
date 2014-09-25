@@ -339,7 +339,7 @@ iter_loop(I, Point, Offset, Len, Order, Elements) ->
                true ->
                     {_Type, _Bucket, DK} = sext:decode(E),
                     {_Type, _Bucket, Key} = sext:decode(Point),
-                    K0 = binary_to_list(Key),
+                    K0 = hd(string:tokens(binary_to_list(Key), "$$")),
                     E0 = binary_to_list(DK),
                     case string:tokens(E0, "$$") of
                         [K0, Element] ->
