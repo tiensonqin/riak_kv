@@ -52,6 +52,7 @@
                 preflist2 :: riak_core_apl:preflist2(),
                 req_id :: non_neg_integer(),
                 timeout :: infinity | pos_integer(),
+                scan_core :: riak_kv_scan_core:scancore(),
                 tref    :: reference(),
                 bkey :: {riak_object:bucket(), riak_object:key()},
                 offset :: non_neg_integer(),
@@ -217,17 +218,16 @@ execute(timeout, StateData0=#state{req_id=ReqId,
     new_state(waiting_vnode_r, StateData).
 
 %% @private
-waiting_vnode_r({r, VnodeResult, _Idx, _ReqId}, StateData) ->
-    client_reply(VnodeResult, StateData);
-%% UpdGetCore = riak_kv_get_core:add_result(Idx, VnodeResult, GetCore),
-%% case riak_kv_get_core:enough(UpdGetCore) of
-%%     true ->
-%%         {Reply, UpdGetCore2} = riak_kv_get_core:response(UpdGetCore),
-%%         NewStateData = client_reply(Reply, StateData#state{get_core = UpdGetCore2});
-%%     false ->
-%%         %% don't use new_state/2 since we do timing per state, not per message in state
-%%         {next_state, waiting_vnode_r,  StateData#state{get_core = UpdGetCore}}
-%% end;
+waiting_vnode_r({r, VnodeResult, Idx, _ReqId}, StateData = #state{scan_core = ScanCore}) ->
+    UpdScanCore = riak_kv_scan_core:add_result(Idx, VnodeResult, ScanCore),
+    case riak_kv_scan_core:enough(UpdScanCore) of
+        true ->
+            {Reply, UpdScanCore2} = riak_kv_scan_core:response(UpdScanCore),
+            client_reply(Reply, StateData#state{scan_core = UpdScanCore2});
+        false ->
+            %% don't use new_state/2 since we do timing per state, not per message in state
+            {next_state, waiting_vnode_r,  StateData#state{scan_core = UpdScanCore}}
+    end;
 waiting_vnode_r(request_timeout, StateData) ->
     client_reply({error,timeout}, StateData).
 
