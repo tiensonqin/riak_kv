@@ -59,7 +59,7 @@ init([]) ->
                     permanent, 30000, worker, [riak_kv_js_manager]},
     HookJSPool = {?JSPOOL_HOOK,
                   {riak_kv_js_manager, start_link,
-                  [?JSPOOL_HOOK, read_js_pool_size(hook_js_vm_count, "hook callback")]},
+                   [?JSPOOL_HOOK, read_js_pool_size(hook_js_vm_count, "hook callback")]},
                   permanent, 30000, worker, [riak_kv_js_manager]},
     JSSup = {riak_kv_js_sup,
              {riak_kv_js_sup, start_link, []},
@@ -67,6 +67,9 @@ init([]) ->
     GetFsmSup = {riak_kv_get_fsm_sup,
                  {riak_kv_get_fsm_sup, start_link, []},
                  permanent, infinity, supervisor, [riak_kv_get_fsm_sup]},
+    ScanFsmSup = {riak_kv_scan_fsm_sup,
+                  {riak_kv_scan_fsm_sup, start_link, []},
+                  permanent, infinity, supervisor, [riak_kv_scan_fsm_sup]},
     PutFsmSup = {riak_kv_put_fsm_sup,
                  {riak_kv_put_fsm_sup, start_link, []},
                  permanent, infinity, supervisor, [riak_kv_put_fsm_sup]},
@@ -74,11 +77,11 @@ init([]) ->
                  {riak_kv_delete_sup, start_link, []},
                  permanent, infinity, supervisor, [riak_kv_delete_sup]},
     BucketsFsmSup = {riak_kv_buckets_fsm_sup,
-                 {riak_kv_buckets_fsm_sup, start_link, []},
-                 permanent, infinity, supervisor, [riak_kv_buckets_fsm_sup]},
+                     {riak_kv_buckets_fsm_sup, start_link, []},
+                     permanent, infinity, supervisor, [riak_kv_buckets_fsm_sup]},
     KeysFsmSup = {riak_kv_keys_fsm_sup,
-                 {riak_kv_keys_fsm_sup, start_link, []},
-                 permanent, infinity, supervisor, [riak_kv_keys_fsm_sup]},
+                  {riak_kv_keys_fsm_sup, start_link, []},
+                  permanent, infinity, supervisor, [riak_kv_keys_fsm_sup]},
     IndexFsmSup = {riak_kv_index_fsm_sup,
                    {riak_kv_index_fsm_sup, start_link, []},
                    permanent, infinity, supervisor, [riak_kv_index_fsm_sup]},
@@ -93,28 +96,29 @@ init([]) ->
                     {riak_kv_ensembles, start_link, []},
                     permanent, 30000, worker, [riak_kv_ensembles]},
 
-    % Figure out which processes we should run...
+                                                % Figure out which processes we should run...
     HasStorageBackend = (app_helper:get_env(riak_kv, storage_backend) /= undefined),
 
-    % Build the process list...
+                                                % Build the process list...
     Processes = lists:flatten([
-        ?IF(HasStorageBackend, VMaster, []),
-        GetFsmSup,
-        PutFsmSup,
-        DeleteSup,
-        SinkFsmSup,
-        BucketsFsmSup,
-        KeysFsmSup,
-        IndexFsmSup,
-        EntropyManager,
-        [EnsemblesKV || riak_core_sup:ensembles_enabled()],
-        JSSup,
-        MapJSPool,
-        ReduceJSPool,
-        HookJSPool
-    ]),
+                               ?IF(HasStorageBackend, VMaster, []),
+                               GetFsmSup,
+                               ScanFsmSup,
+                               PutFsmSup,
+                               DeleteSup,
+                               SinkFsmSup,
+                               BucketsFsmSup,
+                               KeysFsmSup,
+                               IndexFsmSup,
+                               EntropyManager,
+                               [EnsemblesKV || riak_core_sup:ensembles_enabled()],
+                               JSSup,
+                               MapJSPool,
+                               ReduceJSPool,
+                               HookJSPool
+                              ]),
 
-    % Run the proesses...
+                                                % Run the proesses...
     {ok, {{one_for_one, 10, 10}, Processes}}.
 
 %% Internal functions
@@ -123,7 +127,7 @@ read_js_pool_size(Entry, PoolType) ->
         undefined ->
             OldSize = app_helper:get_env(riak_kv, js_vm_count, 0),
             lager:warning("js_vm_count has been deprecated. "
-                            "Please use ~p to configure the ~s pool.", [Entry, PoolType]),
+                          "Please use ~p to configure the ~s pool.", [Entry, PoolType]),
             case OldSize > 8 of
                 true ->
                     OldSize div 3;

@@ -71,6 +71,7 @@
                 config :: config(),
                 read_opts = [],
                 write_opts = [],
+                scan_opts = [],
                 fold_opts = [{fill_cache, false}],
                 fixed_indexes = false, %% true if legacy indexes have be rewritten
                 legacy_indexes = false %% true if new writes use legacy indexes (downgrade)
@@ -328,20 +329,21 @@ delete(Bucket, PrimaryKey, IndexSpecs, #state{ref=Ref,
     end.
 
 %% TODO bettern bit pattern matching
-iter_loop(_I, _Key, _Start, Len, Elements) when length(Elements) =:= Len ->
+iter_loop(_I, _Point, _Offset, Len, _Order, Elements) when length(Elements) =:= Len ->
     Elements;
-iter_loop(I, Key, Start, Len, Elements) ->
-    case eleveldb:iterator_move(I, prev) of
-        {ok, E, _Val} ->
-            if Start > 0 ->
-                    iter_loop(I, Key, Start-1, Len, Elements);
+iter_loop(I, Point, Offset, Len, Order, Elements) ->
+    case eleveldb:iterator_move(I, Order) of
+        {ok, E} ->
+            if Offset > 0 ->
+                    iter_loop(I, Point, Offset-1, Len, Order, Elements);
                true ->
                     {_Type, _Bucket, DK} = sext:decode(E),
+                    {_Type, _Bucket, Key} = sext:decode(Point),
                     K0 = binary_to_list(Key),
                     E0 = binary_to_list(DK),
                     case string:tokens(E0, "$$") of
                         [K0, Element] ->
-                            iter_loop(I, Key, Start, Len, [Element|Elements]);
+                            iter_loop(I, Point, Offset, Len, Order, [Element|Elements]);
                         _Else ->
                             Elements
                     end
@@ -350,17 +352,35 @@ iter_loop(I, Key, Start, Len, Elements) ->
             Elements
     end.
 
-%% TODO add options
-do_scan(I, Key, Start, Len) ->
-    try
-        {Type, Bucket, DecodeKey} = sext:decode(Key),
-        EndPointKey = <<DecodeKey/binary, ?END_SIGNAL/binary>>,
-        EndPoint = sext:encode({Type, Bucket, EndPointKey}),
+get_point(Bucket, Key, prev, StartPoint0) ->
+    StartPoint = case StartPoint0 of
+                     undefined -> <<Key/binary, ?END_SIGNAL/binary>>;
+                     _ -> StartPoint0
+                 end,
+    to_object_key(Bucket, StartPoint);
+get_point(Bucket, Key, next, StartPoint0) ->
+    StartPoint = case StartPoint0 of
+                     undefined -> Key;
+                     _ -> StartPoint0
+                 end,
+    to_object_key(Bucket, StartPoint).
 
-        %% seed to endpoint
-        case eleveldb:iterator_move(I, EndPoint) of
-            {ok, EndPoint} ->
-                {ok, lists:reverse(iter_loop(I, DecodeKey, Start, Len, []))};
+
+do_scan(I, Point, Offset, Len, Order, State) ->
+    case iter_scan(I, Point, Offset, Len, Order) of
+        {ok, Value} ->
+            {ok, Value, State};
+        not_found  ->
+            {error, not_found, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+iter_scan(I, Point, Offset, Len, Order) ->
+    try
+        case eleveldb:iterator_move(I, Point) of
+            {ok, Point} ->
+                {ok, lists:reverse(iter_loop(I, Point, Offset, Len, Order, []))};
             {ok, _K} ->
                 not_found;
             {error, Reason} ->
@@ -370,17 +390,17 @@ do_scan(I, Key, Start, Len) ->
         eleveldb:iterator_close(I)
     end.
 
-scan(Bucket, Key, Start, Len, #state{ref=Ref}=State)->
-    StorageKey = to_object_key(Bucket, Key),
+%% scan_opts
+%% Order() - prev | next, default to prev
+%% start_point
+scan(Bucket, Key, Offset, Len, #state{ref=Ref,
+                                      scan_opts=ScanOpts}=State)->
+
     {ok, I} = eleveldb:iterator(Ref, [], keys_only),
-    case do_scan(I, StorageKey, Start, Len) of
-        {ok, Value} ->
-            {ok, Value, State};
-        not_found  ->
-            {error, not_found, State};
-        {error, Reason} ->
-            {error, Reason, State}
-    end.
+    Order = proplists:get_value(order, ScanOpts),
+    StartPoint = proplists:get_value(start_point, ScanOpts),
+    Point = get_point(Bucket, Key, Order, StartPoint),
+    do_scan(I, Point, Offset, Len, Order, State).
 
 %% @doc Fold over all the buckets
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(),
