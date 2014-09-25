@@ -216,7 +216,7 @@ del(Preflist, BKey, ReqId) ->
                                    riak_kv_vnode_master).
 
 scan(Preflist, BKey, Offset, Len, Order, ReqId) ->
-    scan(Preflist, BKey, Offset, Len, ReqId, {fsm, undefined, self()}).
+    scan(Preflist, BKey, Offset, Len, Order, ReqId, {fsm, undefined, self()}).
 
 scan(Preflist, BKey, Offset, Len, Order, ReqId, Sender) ->
     Req = ?KV_SCAN_REQ{bkey=sanitize_bkey(BKey),
@@ -1225,7 +1225,7 @@ do_put(Sender, {Bucket,_Key}=BKey, RObj, ReqID, StartTime, Options, State) ->
     update_index_write_stats(UpdPutArgs#putargs.is_index, UpdPutArgs#putargs.index_specs),
     UpdState.
 
-do_backend_delete(BKey, RObj, State = #state{idx = Idx,
+do_backend_delete(BKey, RObj, State = #state{idx = _Idx,
                                              mod = Mod,
                                              modstate = ModState}) ->
     %% object is a tombstone or all siblings are tombstones
