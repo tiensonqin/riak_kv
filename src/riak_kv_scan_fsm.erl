@@ -232,13 +232,17 @@ waiting_vnode_r({r, VnodeResult, Idx, _ReqId}, StateData = #state{scan_core = Sc
     case riak_kv_scan_core:enough(UpdScanCore) of
         true ->
             {Reply, UpdScanCore2} = riak_kv_scan_core:response(UpdScanCore),
-            client_reply(Reply, StateData#state{scan_core = UpdScanCore2});
+            NewStateData = client_reply(Reply, StateData#state{scan_core = UpdScanCore2}),
+            finalize(NewStateData);
         false ->
             %% don't use new_state/2 since we do timing per state, not per message in state
             {next_state, waiting_vnode_r,  StateData#state{scan_core = UpdScanCore}}
     end;
 waiting_vnode_r(request_timeout, StateData) ->
     client_reply({error,timeout}, StateData).
+
+finalize(StateData) ->
+    {stop,normal,StateData}.
 
 %% @private
 handle_event(_Event, _StateName, StateData) ->
