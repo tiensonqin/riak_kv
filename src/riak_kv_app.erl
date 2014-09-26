@@ -30,6 +30,7 @@
 
 -define(SERVICES, [{riak_kv_pb_object, 3, 6}, %% ClientID stuff
                    {riak_kv_pb_object, 9, 14}, %% Object requests
+                   {riak_kv_pb_scan, 100,101}, %% Indice scan requests
                    {riak_kv_pb_bucket, 15, 18}, %% Bucket requests
                    {riak_kv_pb_mapred, 23, 24}, %% MapReduce requests
                    {riak_kv_pb_index, 25, 26},   %% Secondary index requests
@@ -94,7 +95,7 @@ start(_Type, _StartArgs) ->
        {rw, quorum},
        {basic_quorum, false},
        {notfound_ok, true}
-   ]),
+      ]),
 
     %% Check the storage backend
     StorageBackend = app_helper:get_env(riak_kv, storage_backend),
@@ -192,13 +193,13 @@ start(_Type, _StartArgs) ->
             %% The riak_core_ring_handler blocks until all vnodes have been started
             %% synchronously.
             riak_core:register(riak_kv, [
-                {vnode_module, riak_kv_vnode},
-                {bucket_validator, riak_kv_bucket},
-                {stat_mod, riak_kv_stat},
-                {permissions, [get, put, delete, list_keys, list_buckets,
-                               mapreduce, index]}
-            ]
-            ++ [{health_check, {?MODULE, check_kv_health, []}} || HealthCheckOn]),
+                                         {vnode_module, riak_kv_vnode},
+                                         {bucket_validator, riak_kv_bucket},
+                                         {stat_mod, riak_kv_stat},
+                                         {permissions, [get, put, delete, list_keys, list_buckets,
+                                                        mapreduce, index]}
+                                        ]
+                               ++ [{health_check, {?MODULE, check_kv_health, []}} || HealthCheckOn]),
 
             ok = riak_api_pb_service:register(?SERVICES),
 
@@ -223,7 +224,7 @@ prep_stop(_State) ->
 
         %% Gracefully unregister riak_kv webmachine endpoints.
         [ webmachine_router:remove_route(R) || R <-
-            riak_kv_web:dispatch_table() ],
+                                                   riak_kv_web:dispatch_table() ],
         lager:info("unregistered webmachine routes"),
         wait_for_put_fsms(),
         lager:info("all active put FSMs completed"),
