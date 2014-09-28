@@ -83,13 +83,13 @@ decode(Code, Bin) ->
     case Msg of
         #rpbgetreq{} ->
             {ok, Msg, {"riak_kv.get", bucket_type(Msg#rpbgetreq.type,
-                                                        Msg#rpbgetreq.bucket)}};
+                                                  Msg#rpbgetreq.bucket)}};
         #rpbputreq{} ->
             {ok, Msg, {"riak_kv.put", bucket_type(Msg#rpbputreq.type,
-                                                        Msg#rpbputreq.bucket)}};
+                                                  Msg#rpbputreq.bucket)}};
         #rpbdelreq{} ->
             {ok, Msg, {"riak_kv.delete", bucket_type(Msg#rpbdelreq.type,
-                                                           Msg#rpbdelreq.bucket)}};
+                                                     Msg#rpbdelreq.bucket)}};
         _ ->
             {ok, Msg}
     end.
@@ -179,7 +179,7 @@ process(#rpbputreq{bucket=B0, type=T, key=K, vclock=PbVC,
                    n_val=N_val, sloppy_quorum=SloppyQuorum} = Req,
         #state{client=C} = State) when NotMod; NoneMatch ->
     GetOpts = make_option(n_val, N_val) ++
-              make_option(sloppy_quorum, SloppyQuorum),
+        make_option(sloppy_quorum, SloppyQuorum),
     B = maybe_bucket_type(T, B0),
     Result = case riak_kv_util:consistent_object(B) of
                  true ->
@@ -254,7 +254,7 @@ process(#rpbputreq{bucket=B0, type=T, key=K, vclock=PbVC, content=RpbContent,
                    _ ->
                        Options
                end,
-    case C:put(O, make_options([{w, W}, {dw, DW}, {pw, PW}, 
+    case C:put(O, make_options([{w, W}, {dw, DW}, {pw, PW},
                                 {timeout, Timeout}, {asis, AsIs},
                                 {n_val, N_val},
                                 {sloppy_quorum, SloppyQuorum}]) ++ Options2) of
@@ -298,7 +298,7 @@ process(#rpbdelreq{bucket=B0, type=T, key=K, vclock=PbVc,
     RW = decode_quorum(RW0),
 
     B = maybe_bucket_type(T, B0),
-    Options = make_options([{r, R}, {w, W}, {rw, RW}, {pr, PR}, {pw, PW}, 
+    Options = make_options([{r, R}, {w, W}, {rw, RW}, {pr, PR}, {pw, PW},
                             {dw, DW}, {timeout, Timeout}, {n_val, N_val},
                             {sloppy_quorum, SloppyQuorum}]),
     Result = case PbVc of

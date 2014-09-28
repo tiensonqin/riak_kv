@@ -48,7 +48,10 @@ process(#rpbscanreq{bucket=B0, type=T, key=K,
                     timeout=Timeout}, #state{client=C} = State) ->
     B = maybe_bucket_type(T, B0),
     case C:scan(B, K, Offset, Len, Order, [{timeout, Timeout}]) of
-        {ok, Content} -> {reply, #rpbscanresp{content=Content}, State};
+        {ok, Content} ->
+            Value = term_to_binary(Content),
+            PbContent = #rpbcontent{value = Value},
+            {reply, #rpbscanresp{content=PbContent}, State};
         {error, notfound} -> {reply, #rpbscanresp{}, State};
         {error, Reason} ->
             {error, {format,Reason}, State}
