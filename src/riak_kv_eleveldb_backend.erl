@@ -342,12 +342,16 @@ iter_loop(I, Point, Offset, Len, Order, Elements) ->
                     K0 = hd(string:tokens(binary_to_list(Key), "$$")),
                     E0 = binary_to_list(DK),
                     case string:tokens(E0, "$$") of
+                        [K0, "end"] ->
+                            Elements;
                         [K0, Element] ->
                             iter_loop(I, Point, Offset, Len, Order, [Element|Elements]);
                         _Else ->
                             Elements
                     end
             end;
+        {error, invalid_iterator} ->
+            Elements;
         {error, iterator_closed} ->
             Elements
     end.
